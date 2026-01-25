@@ -1,0 +1,1430 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Namu - Latex Forest Tree Builder</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22%233b82f6%22 stroke-width=%222%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22><rect x=%229%22 y=%223%22 width=%226%22 height=%226%22 rx=%221%22/><path d=%22M12 9v4%22/><path d=%22M17 13v3%22/><path d=%22M7 13v3%22/><rect x=%2214%22 y=%2216%22 width=%226%22 height=%226%22 rx=%221%22/><rect x=%224%22 y=%2216%22 width=%226%22 height=%226%22 rx=%221%22/></svg>">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <style>
+        :root {
+            /* Minimalist Palette */
+            --bg-color: #ffffff;
+            --text-main: #111111;
+            --text-muted: #888888; /* Slightly lighter for the 'home' link */
+            --border-light: #e5e5e5;
+            --border-dark: #111111;
+            
+            --accent-color: #111111;
+            --selection-bg: #f4f4f5;
+            
+            --node-fill: #ffffff;
+            --node-stroke: #111111;
+            --line-color: #111111;
+            
+            --danger: #ef4444; 
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+            font-size: 14px;
+        }
+
+        /* --- Toolbar --- */
+        .toolbar {
+            background: var(--bg-color);
+            padding: 16px 24px;
+            border-bottom: 1px solid var(--border-light);
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+       /* --- GLOBAL HYPERLINKS (Default Editorial Style) --- */
+        a {
+            color: inherit;
+            text-decoration: none;
+            border-bottom: 1px solid #a0a0a0; /* Thin Grey Line */
+            transition: all 0.2s ease;
+            padding-bottom: 1px;
+            cursor: pointer;
+        }
+
+        a:hover {
+            border-bottom: 2px solid var(--text-main); /* Thick Black Line */
+            background-color: rgba(0,0,0,0.05);        /* Subtle Highlight */
+        }
+
+        /* --- BRANDING (Inherits global link style, adds layout) --- */
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            margin-right: 16px; 
+            
+            /* Typography specific to logo */
+            font-size: 14px;
+            font-weight: 800;
+            letter-spacing: -0.3px;
+        }
+        
+        .brand-home {
+            color: var(--text-muted);
+            font-weight: 500;
+        }
+
+        .brand-current {
+            color: var(--text-main);
+        }
+
+        /* Standard Buttons */
+        button {
+            background: transparent;
+            border: 1px solid var(--border-light);
+            color: var(--text-main);
+            padding: 6px 12px;
+            border-radius: 4px; 
+            cursor: pointer;
+            font-family: inherit;
+            font-weight: 500;
+            font-size: 13px;
+            transition: all 0.15s ease;
+        }
+
+        button:hover {
+            border-color: var(--border-dark);
+            background: var(--selection-bg);
+        }
+        
+        button:active { transform: translateY(1px); }
+        
+        button.primary {
+            border-color: var(--border-dark);
+            background: var(--text-main);
+            color: white;
+        }
+        button.primary:hover {
+            background: #333;
+            border-color: #333;
+        }
+
+        button.active-mode {
+            background: var(--text-main);
+            color: white;
+            border-color: var(--text-main);
+        }
+
+        .help-btn {
+            width: 28px;
+            height: 28px;
+            padding: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            font-weight: 700;
+            border: 1px solid var(--text-main);
+            margin-left: auto; 
+        }
+
+        .toggle-container {
+            display: flex;
+            align-items: center;
+            font-size: 13px;
+            color: var(--text-main);
+            margin-left: 12px;
+            cursor: pointer;
+        }
+        .toggle-container input {
+            accent-color: var(--text-main);
+            margin-right: 6px;
+        }
+
+        .id-editor {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-left: 10px;
+        }
+        .id-editor input {
+            width: 60px;
+            padding: 4px;
+            border: 1px solid var(--border-light);
+            border-radius: 4px;
+            font-family: 'Inter', monospace;
+            color: var(--text-main);
+            outline: none;
+        }
+        .id-editor input:focus { border-color: var(--border-dark); }
+
+        /* --- Workspace --- */
+        .workspace {
+            flex-grow: 1;
+            position: relative;
+            overflow: auto;
+            cursor: default;
+            padding: 40px;
+            outline: none;
+            background-image: radial-gradient(#e5e5e5 1px, transparent 1px);
+            background-size: 20px 20px;
+        }
+        
+        .floating-input {
+            position: absolute;
+            display: none;
+            background: var(--bg-color);
+            border: 1px solid var(--border-dark);
+            padding: 4px 8px;
+            font-family: inherit;
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--text-main);
+            text-align: center;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            z-index: 100;
+            min-width: 60px;
+            transform: translate(-50%, -50%);
+            outline: none;
+        }
+
+        /* SVG Elements */
+        .node-circle {
+            fill: var(--node-fill);
+            stroke: var(--node-stroke);
+            stroke-width: 1.5px;
+            transition: all 0.15s ease;
+        }
+
+        .node-text {
+            font-family: 'Inter', sans-serif;
+            font-size: 14px;
+            text-anchor: middle;
+            dominant-baseline: middle;
+            font-weight: 500;
+            pointer-events: none;
+            fill: var(--text-main);
+            stroke: var(--bg-color);
+            stroke-width: 4px;
+            paint-order: stroke;
+        }
+
+        .note-text {
+            font-family: 'Inter', sans-serif;
+            font-size: 11px;
+            fill: var(--text-muted);
+            font-style: italic;
+            transition: all 0.1s;
+        }
+        
+        .note-group.selected-note .note-text {
+            fill: #ffffff;
+            stroke: #000000;
+            stroke-width: 6px;
+            paint-order: stroke fill;
+            font-weight: 700;
+            font-style: normal;
+        }
+
+        .connection {
+            stroke: var(--line-color);
+            stroke-width: 1.5px;
+        }
+
+        .node-group.selected .node-circle {
+            stroke-width: 2px;
+            stroke: var(--text-main); 
+            fill: #f4f4f5; 
+        }
+        
+        .node-group.source-node .node-circle {
+            stroke-dasharray: 4 2;
+            stroke: var(--text-main);
+            animation: none;
+        }
+
+        /* Arrows */
+        .movement-arrow {
+            fill: none;
+            stroke: var(--text-main);
+            stroke-width: 1.5px;
+            pointer-events: none;
+        }
+        .movement-arrow.selected-arrow {
+            stroke: var(--danger) !important;
+            stroke-width: 2px !important;
+        }
+        .movement-arrow-hitbox {
+            fill: none; stroke: transparent; stroke-width: 15px; cursor: pointer;
+        }
+
+        .arrow-label-rect {
+            fill: var(--bg-color);
+            stroke: var(--border-light);
+            stroke-width: 1px;
+        }
+        .arrow-label-text {
+            font-size: 10px;
+            font-family: 'Inter', sans-serif;
+            fill: var(--text-main);
+            text-anchor: middle;
+            dominant-baseline: middle;
+        }
+
+        /* Toggles Group Styling */
+.toggle-group {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: 12px;
+    background: #f9f9f9;
+    padding: 4px 8px;
+    border-radius: 4px;
+    border: 1px solid var(--border-light);
+}
+
+.info-icon {
+    font-size: 11px;
+    width: 16px; 
+    height: 16px;
+    border-radius: 50%;
+    background: var(--border-light);
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-weight: 700;
+}
+
+.info-icon:hover {
+    background: var(--text-main);
+    color: white;
+}
+
+        /* --- Output Panel --- */
+        .output-panel {
+            background: #fafafa;
+            border-top: 1px solid var(--border-light);
+            height: 140px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .output-header {
+            padding: 8px 16px;
+            background: #f4f4f5;
+            border-bottom: 1px solid var(--border-light);
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-muted);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        /* Copy Button */
+        .copy-btn {
+            background: var(--text-main); 
+            border: 1px solid var(--text-main);
+            color: white; 
+            padding: 6px 14px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1); 
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+        
+        .copy-btn:hover {
+            background: #333; 
+            border-color: #333;
+            transform: translateY(-1px);
+        }
+        
+        .copy-btn:active { transform: translateY(1px); }
+        .copy-btn svg { width: 14px; height: 14px; fill: currentColor; }
+        
+        .copy-btn.success {
+            background: #22c55e !important;
+            border-color: #22c55e !important;
+            color: white !important;
+            box-shadow: none;
+        }
+
+        textarea {
+            color: var(--text-main);
+            font-family: 'Menlo', 'Monaco', 'Courier New', monospace;
+            font-size: 12px;
+            padding: 16px;
+        }
+
+        /* --- HELP MODAL --- */
+        .modal-overlay {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(2px);
+            z-index: 1000;
+            display: none;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-content {
+            background: white;
+            border: 1px solid var(--border-dark);
+            padding: 32px;
+            width: 100%;
+            max-width: 500px;
+            box-shadow: 0 10px 40px -10px rgba(0,0,0,0.1);
+        }
+
+        .modal-header {
+            font-size: 18px;
+            font-weight: 700;
+            margin-bottom: 24px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid var(--border-light);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .close-btn {
+            border: none;
+            background: transparent;
+            font-size: 20px;
+            cursor: pointer;
+            padding: 0;
+            color: var(--text-muted);
+        }
+        .close-btn:hover { color: var(--text-main); background: transparent; }
+
+        .shortcut-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px 24px;
+            font-size: 13px;
+            margin-bottom: 24px;
+        }
+
+        .shortcut-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .key-combo {
+            font-family: 'Inter', sans-serif;
+            font-weight: 600;
+            background: #f4f4f5;
+            padding: 2px 6px;
+            border-radius: 4px;
+            border: 1px solid #e5e5e5;
+            font-size: 11px;
+            color: var(--text-main);
+        }
+
+        .instruction-text {
+            font-size: 13px;
+            line-height: 1.6;
+            color: var(--text-muted);
+        }
+        .instruction-text p { margin-top: 0; }
+        /* Updated Modal Styling */
+        .modal-content {
+            background: white;
+            border: 1px solid var(--border-dark);
+            padding: 0; /* Padding moved to modal-body */
+            width: 100%;
+            max-width: 600px;
+            box-shadow: 0 10px 40px -10px rgba(0,0,0,0.1);
+            max-height: 85vh; /* Max height for scrolling */
+            display: flex;
+            flex-direction: column;
+        }
+
+        .modal-header {
+            font-size: 16px;
+            font-weight: 700;
+            padding: 20px 32px;
+            border-bottom: 1px solid var(--border-light);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #f9f9f9;
+        }
+
+        .modal-body {
+            padding: 32px;
+            overflow-y: auto; /* Enables scrolling */
+        }
+
+        .section-title {
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-muted);
+            font-weight: 700;
+            margin-bottom: 16px;
+            border-bottom: 1px solid var(--border-light);
+            padding-bottom: 8px;
+        }
+
+        /* Preamble Code Block Styling */
+        .code-block-container {
+            position: relative;
+            margin-bottom: 24px;
+        }
+
+        .preamble-code {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 16px;
+            border-radius: 4px;
+            font-family: 'Menlo', monospace;
+            font-size: 11px;
+            line-height: 1.4;
+            white-space: pre-wrap;
+            overflow-x: auto;
+            border: 1px solid #333;
+        }
+
+        .copy-preamble-btn {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            background: rgba(255,255,255,0.1);
+            color: white;
+            border: 1px solid rgba(255,255,255,0.2);
+            font-size: 10px;
+            padding: 4px 8px;
+            border-radius: 3px;
+            cursor: pointer;
+        }
+        .copy-preamble-btn:hover {
+            background: rgba(255,255,255,0.2);
+        }
+    </style>
+</head>
+<body>
+
+    <div class="toolbar">
+        <a href="https://www.jungukang.com" class="brand" title="Back to Homepage">
+            <span class="brand-home">jungu.kang /</span> 
+            <span class="brand-current"> namu<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-network"><rect x="9" y="3" width="6" height="6" rx="1"/><path d="M12 9v4"/><path d="M17 13v3"/><path d="M7 13v3"/><rect x="14" y="16" width="6" height="6" rx="1"/><rect x="4" y="16" width="6" height="6" rx="1"/></svg></span>
+        </a>
+
+        <div style="width: 1px; height: 20px; background: #e5e5e5; margin: 0 4px;"></div>
+
+        <button class="primary" onclick="addChild(1)" title="Ctrl+Enter">+ Branch</button>
+        <button onclick="addChild(2)" title="Ctrl+Shift+Enter">+ 2 Branches</button>
+        
+        <div style="width: 1px; height: 20px; background: #e5e5e5; margin: 0 8px;"></div>
+        
+        <button id="arrowBtn" onclick="toggleArrowMode()" title="Alt + m">Draw Arrow</button>
+        <button onclick="toggleArrowStyle()" id="styleBtn">Style: Curved</button>
+        <button onclick="addNote()" title="Alt + n">Add Note</button>
+        
+        <div style="width: 1px; height: 20px; background: #e5e5e5; margin: 0 8px;"></div>
+        
+        <button onclick="deleteObject()" title="Backspace">Delete</button>
+        <button onclick="resetCanvas()">Clear</button>
+        
+       <div class="toggle-group">
+    <label class="toggle-container">
+        <input type="checkbox" id="niceTreeToggle" checked onclick="generateForestCode()">
+        Nice Tree Style
+    </label>
+    <div class="info-icon" onclick="toggleHelp(true)" title="See required Preamble">i</div>
+</div>
+
+        <div class="id-editor" id="idEditorPanel" style="visibility: hidden;">
+            <span>ID:</span> 
+            <input type="text" id="nodeIdInput" onchange="updateNodeId(this.value)" onkeydown="event.stopPropagation()">
+        </div>
+
+        <button class="help-btn" onclick="toggleHelp()">?</button>
+    </div>
+
+   <div class="modal-overlay" id="helpModal" onclick="toggleHelp()">
+        <div class="modal-content" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                Instructions & Setup
+                <button class="close-btn" onclick="toggleHelp()">×</button>
+            </div>
+            
+            <div class="modal-body">
+                <div class="section-title">Keyboard Shortcuts</div>
+                <div class="shortcut-grid">
+                    <div class="shortcut-item"><span>Add 1 Branch</span> <span class="key-combo">Ctrl + Enter</span></div>
+                    <div class="shortcut-item"><span>Add 2 Branches</span> <span class="key-combo">Ctrl + Shift + Enter</span></div>
+                    <div class="shortcut-item"><span>Edit Text</span> <span class="key-combo">Enter</span></div>
+                    <div class="shortcut-item"><span>Navigate</span> <span class="key-combo">Arrow Keys</span></div>
+                    <div class="shortcut-item"><span>Jump to Arrow</span> <span class="key-combo">Tab</span></div>
+                    <div class="shortcut-item"><span>Draw Arrow</span> <span class="key-combo">Alt + m</span></div>
+                    <div class="shortcut-item"><span>Add Note</span> <span class="key-combo">Alt + n</span></div>
+                    <div class="shortcut-item"><span>Delete</span> <span class="key-combo">Backspace</span></div>
+                </div>
+
+                <div class="section-title" id="preambleSection">LaTeX Preamble (Required for 'Nice Tree')</div>
+                <div class="instruction-text" style="margin-bottom: 8px;">
+                    To use the "Nice Tree Style" (from "nice tree style" by <a href="https://jahoo.github.io/">Jacob Hoover Vigly</a> ), copy this code into your LaTeX document's preamble (before <code>\begin{document}</code>). You only need to do this once.
+                </div>
+                
+                <div class="code-block-container">
+                    <button class="copy-preamble-btn" onclick="copyPreamble(this)">Copy</button>
+                    <div class="preamble-code" id="preambleCode">\forestset{
+    nice trees/.style={
+        delay ={ where content ={}
+            { shape = coordinate , for siblings ={ anchor = north }}{}} ,
+        for tree ={ calign = fixed edge angles , calign angle =65 , l=1 em},
+        for tree={
+            parent anchor=south, child anchor=north, align=center, base=top,
+            inner sep=0pt, l=0ex,
+            before typesetting nodes={% 
+                if content={}{
+                    for parent={for children={anchor=north},calign=fixed edge angles,calign angle=60},
+                    shape=coordinate, calign=fixed edge angles, calign angle=60,
+                }{},
+            },
+        },
+    },
+}</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="workspace" id="workspace" tabindex="0" onclick="bgClick(event)">
+        <input type="text" id="nodeEditor" class="floating-input" onblur="stopNodeEditing(true)" onkeydown="handleEditorKey(event)">
+        
+        <svg id="treeCanvas">
+            <defs>
+                <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+                  <polygon points="0 0, 8 3, 0 6" fill="#111" />
+                </marker>
+                 <marker id="arrowhead-selected" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+                  <polygon points="0 0, 8 3, 0 6" fill="#ef4444" />
+                </marker>
+            </defs>
+        </svg>
+    </div>
+
+    <div class="output-panel">
+        <div class="output-header">
+            <span>LaTeX Output</span>
+            <button class="copy-btn" id="copyBtn" onclick="copyCode()">
+                <svg viewBox="0 0 24 24">
+                    <path d="M16 1H4C2.9 1 2 1.9 2 3v14h2V3h12V1zm3 4H8C6.9 5 6 5.9 6 7v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>
+                </svg>
+                Copy Code
+            </button>
+        </div>
+        <textarea id="forestOutput" readonly></textarea>
+    </div>
+
+    <script>
+        // --- DATA STRUCTURE ---
+        let root = null;
+        let selectedNodeId = null;
+        let selectedNoteNodeId = null;
+        let nodes = {}; 
+        let arrows = []; 
+        let selectedArrowId = null;
+        let arrowStyle = 'curved'; // 'curved' or 'square'
+        let isEditingNode = false;
+
+        const globalCoords = {}; 
+        let idCounter = 1; 
+        let labelCounter = 0; 
+        const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+        let isDrawingArrow = false;
+        let arrowSourceId = null;
+
+        // --- HELPER FUNCTIONS ---
+        function toggleHelp(scrollToPreamble) {
+    const modal = document.getElementById('helpModal');
+    
+    // If modal is open and we clicked the main help button again, close it.
+    // BUT if we clicked the (i) icon, force it open even if it was closed.
+    if (modal.style.display === 'flex' && !scrollToPreamble) {
+        modal.style.display = 'none';
+    } else {
+        modal.style.display = 'flex';
+        if (scrollToPreamble) {
+            // Wait 100ms for the modal to render, then scroll
+            setTimeout(() => {
+                const section = document.getElementById('preambleSection');
+                if(section) section.scrollIntoView({ behavior: 'smooth' });
+            }, 100);
+        }
+    }
+}
+
+        // --- KEYBOARD LISTENER ---
+        document.addEventListener('keydown', function(event) {
+            
+            // Allow Escape to close modal
+            if (event.key === 'Escape') {
+                const modal = document.getElementById('helpModal');
+                if (modal.style.display === 'flex') {
+                    modal.style.display = 'none';
+                    return;
+                }
+            }
+
+            // Ignore if regular inputs are focused
+            if ((document.activeElement.tagName === 'INPUT' && document.activeElement.id !== 'nodeEditor') || document.activeElement.tagName === 'TEXTAREA') return;
+
+            // Block shortcuts if we are currently editing the node text
+            if (isEditingNode) return; 
+
+            // 1. EDIT MODE / CONFIRM
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                // If Arrow is selected -> Edit Label
+                if (selectedArrowId) {
+                    editArrowLabel(null, selectedArrowId);
+                    return;
+                }
+                // If Node is selected -> Enter Edit Mode
+                if (selectedNodeId) {
+                    // Check for Ctrl/Shift modifiers for Adding Children
+                    if (event.ctrlKey || event.metaKey) {
+                        if (event.shiftKey) addChild(2);
+                        else addChild(1);
+                    } else {
+                        // Standard Enter: Edit Text
+                        startNodeEditing(selectedNodeId);
+                    }
+                    return;
+                }
+            }
+
+            // 2. MOVEMENT ARROW TOOL ('Alt + m')
+            if (event.key.toLowerCase() === 'm' && event.altKey) {
+                event.preventDefault(); 
+                event.stopPropagation();
+                if (selectedNodeId) {
+                    if (!isDrawingArrow) { toggleArrowMode(true); handleNodeClickForArrow(selectedNodeId); } 
+                    else { handleNodeClickForArrow(selectedNodeId); }
+                }
+                return;
+            }
+
+            // 3. ADD NOTE ('Alt + n')
+            if (event.key.toLowerCase() === 'n' && event.altKey) {
+                event.preventDefault();
+                if (selectedNodeId) addNote();
+                return;
+            }
+
+            // 4. NAVIGATION & SELECTION
+            if (selectedArrowId) {
+                const arr = arrows.find(a => a.id === selectedArrowId);
+                if (!arr) return;
+
+                if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') {
+                    event.preventDefault();
+                    selectNode(null, arr.from); // Go to source
+                } else if (event.key === 'ArrowDown' || event.key === 'ArrowRight') {
+                    event.preventDefault();
+                    selectNode(null, arr.to); // Go to target
+                } else if (event.key === 'Tab') {
+                    event.preventDefault();
+                    // Cycle: Arrow -> Target Node
+                    selectNode(null, arr.to);
+                }
+                return;
+            }
+
+            let navNodeId = selectedNodeId;
+            if (!navNodeId && root) navNodeId = root.id;
+
+            if (navNodeId) {
+                const node = nodes[navNodeId];
+                let nextId = null;
+
+                // Tab Navigation (Node <-> Arrows)
+                if (event.key === 'Tab') {
+                    event.preventDefault();
+                    const outgoing = arrows.filter(a => a.from === node.id);
+                    if (outgoing.length > 0) {
+                        // Cycle to first outgoing arrow
+                        selectArrow(null, outgoing[0].id);
+                        return;
+                    }
+                }
+
+                if (event.key === 'ArrowUp') {
+                    if (node.parentId) nextId = node.parentId;
+                } 
+                else if (event.key === 'ArrowDown') {
+                    if (event.shiftKey) {
+                        const outgoing = arrows.filter(a => a.from === node.id);
+                        if (outgoing.length > 0) { selectArrow(null, outgoing[0].id); return; }
+                    }
+                    if (node.children.length > 0) nextId = node.children[0].id;
+                } 
+                else if (event.key === 'ArrowLeft') {
+                    nextId = getSiblingId(node, -1);
+                } 
+                else if (event.key === 'ArrowRight') {
+                    if (event.shiftKey) {
+                        const outgoing = arrows.filter(a => a.from === node.id);
+                        if (outgoing.length > 0) { selectArrow(null, outgoing[0].id); return; }
+                    }
+                    nextId = getSiblingId(node, 1);
+                }
+
+                if (nextId) {
+                    event.preventDefault();
+                    selectNode(null, nextId);
+                }
+            }
+
+            // 5. DELETION
+            if (event.key === 'Backspace' || event.key === 'Delete') {
+                if (selectedArrowId) {
+                    event.preventDefault();
+                    deleteArrow();
+                    return;
+                }
+                if (selectedNoteNodeId && nodes[selectedNoteNodeId].note) {
+                     if(event.key === 'Delete' || nodes[selectedNoteNodeId].note.text === "") {
+                         deleteNote();
+                         return;
+                     }
+                     if(event.key === 'Backspace') {
+                         nodes[selectedNoteNodeId].note.text = nodes[selectedNoteNodeId].note.text.slice(0, -1);
+                         render();
+                         return;
+                     }
+                }
+                if (selectedNodeId && event.key === 'Delete') {
+                    event.preventDefault();
+                    deleteNode();
+                    return;
+                }
+            }
+        });
+
+        function getSiblingId(node, dir) {
+            if (!node.parentId) return null;
+            const parent = nodes[node.parentId];
+            const idx = parent.children.indexOf(node);
+            const newIdx = idx + dir;
+            if (newIdx >= 0 && newIdx < parent.children.length) {
+                return parent.children[newIdx].id;
+            }
+            return null;
+        }
+
+        // --- EDITING LOGIC ---
+
+        function startNodeEditing(nodeId) {
+            if (!nodes[nodeId]) return;
+            const node = nodes[nodeId];
+            const pos = globalCoords[nodeId];
+            if (!pos) return;
+
+            isEditingNode = true;
+            const input = document.getElementById('nodeEditor');
+            
+            // Position input over node
+            input.style.display = 'block';
+            input.style.left = pos.x + 'px';
+            input.style.top = pos.y + 'px';
+            input.value = node.label;
+            
+            input.focus();
+            input.select();
+        }
+
+        function stopNodeEditing(save) {
+            if (!isEditingNode) return;
+            const input = document.getElementById('nodeEditor');
+            
+            if (save && selectedNodeId && nodes[selectedNodeId]) {
+                nodes[selectedNodeId].label = input.value;
+            }
+            
+            input.style.display = 'none';
+            input.value = "";
+            isEditingNode = false;
+            render();
+            // Refocus workspace to keep keyboard commands active
+            document.getElementById('workspace').focus();
+        }
+
+        function handleEditorKey(event) {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                stopNodeEditing(true);
+            } else if (event.key === 'Escape') {
+                event.preventDefault();
+                stopNodeEditing(false); // Cancel
+            }
+            event.stopPropagation(); // Prevent bubbling to main listener
+        }
+
+        // --- LOGIC ---
+
+        function generateId() {
+            let candidate = "n" + idCounter++;
+            while(nodes[candidate]) { candidate = "n" + idCounter++; }
+            return candidate;
+        }
+        
+        function updateNodeId(newId) {
+            if (!selectedNodeId) return;
+            if (!newId || newId.trim() === "") return;
+            if (nodes[newId] && newId !== selectedNodeId) {
+                alert("ID collision");
+                document.getElementById('nodeIdInput').value = selectedNodeId;
+                return;
+            }
+            const oldId = selectedNodeId;
+            const node = nodes[oldId];
+            delete nodes[oldId];
+            nodes[newId] = node;
+            node.id = newId;
+            node.children.forEach(child => child.parentId = newId);
+            if (!node.parentId && root.id === oldId) root = node;
+            arrows.forEach(a => {
+                if (a.from === oldId) a.from = newId;
+                if (a.to === oldId) a.to = newId;
+            });
+            selectedNodeId = newId;
+            render();
+            document.getElementById('workspace').focus();
+        }
+
+        function getNextLabel() {
+            const charIndex = labelCounter % 26;
+            const cycle = Math.floor(labelCounter / 26);
+            const name = alphabet[charIndex] + (cycle > 0 ? cycle : "");
+            labelCounter++;
+            return name;
+        }
+
+        function createNode(label) {
+            const id = generateId();
+            const node = { id: id, label: label, children: [], parentId: null, weight: 1, note: null };
+            nodes[id] = node;
+            return node;
+        }
+
+        function addChild(count) {
+            if (!root) {
+                labelCounter = 0; idCounter = 1;
+                root = createNode("CP");
+                selectedNodeId = root.id;
+                render();
+                document.getElementById('workspace').focus();
+                return;
+            }
+            if (selectedNodeId) {
+                const parent = nodes[selectedNodeId];
+                for(let i=0; i<count; i++) {
+                    const child = createNode(getNextLabel());
+                    linkNodes(parent, child);
+                }
+                render();
+                document.getElementById('workspace').focus();
+            } else {
+                alert("Select a node first.");
+            }
+        }
+
+        function linkNodes(parent, child) {
+            parent.children.push(child);
+            child.parentId = parent.id;
+        }
+
+        function addNote() {
+            if(!selectedNodeId) return;
+            const node = nodes[selectedNodeId];
+            if(!node.note) {
+                node.note = { text: "Note", position: "right" };
+            }
+            selectNote(null, node.id);
+        }
+        
+        function deleteNote() {
+            if(selectedNoteNodeId && nodes[selectedNoteNodeId].note) {
+                nodes[selectedNoteNodeId].note = null;
+                deselectAll();
+                render();
+            }
+        }
+        
+        function selectNote(event, nodeId) {
+            if(event) event.stopPropagation();
+            deselectAll();
+            selectedNoteNodeId = nodeId;
+            render();
+            document.getElementById('workspace').focus();
+        }
+
+        function deleteObject() {
+            if (selectedArrowId) deleteArrow();
+            else if (selectedNoteNodeId) deleteNote();
+            else if (selectedNodeId) deleteNode();
+        }
+
+        function deleteNode() {
+            if (!selectedNodeId) return;
+            const node = nodes[selectedNodeId];
+            if (node === root) { resetCanvas(); return; }
+            if (node.parentId) {
+                const parent = nodes[node.parentId];
+                parent.children = parent.children.filter(c => c.id !== node.id);
+            }
+            deleteNodeRecursive(node);
+            arrows = arrows.filter(a => nodes[a.from] && nodes[a.to]);
+            deselectAll();
+            render();
+        }
+
+        function deleteNodeRecursive(node) {
+            node.children.forEach(child => deleteNodeRecursive(child));
+            delete nodes[node.id];
+        }
+        
+        function deleteArrow() {
+            if(selectedArrowId) {
+                arrows = arrows.filter(a => a.id !== selectedArrowId);
+                selectedArrowId = null;
+                render();
+            }
+        }
+
+        function resetCanvas() {
+            root = null;
+            nodes = {};
+            arrows = [];
+            deselectAll();
+            labelCounter = 0; idCounter = 1;
+            render();
+        }
+
+        // --- ARROW LOGIC ---
+
+        function toggleArrowMode(forceState) {
+            if (typeof forceState !== 'undefined') {
+                isDrawingArrow = forceState;
+            } else {
+                isDrawingArrow = !isDrawingArrow;
+            }
+            
+            if (!isDrawingArrow) {
+                arrowSourceId = null;
+                const els = document.querySelectorAll('.source-node');
+                els.forEach(el => el.classList.remove('source-node'));
+            }
+
+            const btn = document.getElementById('arrowBtn');
+            if (isDrawingArrow) {
+                btn.classList.add('active-mode');
+                btn.textContent = arrowSourceId ? "Pick Target (Alt+m)" : "Pick Start (Alt+m)";
+            } else {
+                btn.classList.remove('active-mode');
+                btn.textContent = "Draw Arrow";
+            }
+        }
+
+        function toggleArrowStyle() {
+            if (arrowStyle === 'curved') {
+                arrowStyle = 'square';
+                document.getElementById('styleBtn').textContent = "Style: Square";
+            } else {
+                arrowStyle = 'curved';
+                document.getElementById('styleBtn').textContent = "Style: Curved";
+            }
+            render();
+        }
+
+        function handleNodeClickForArrow(id) {
+            if (!arrowSourceId) {
+                arrowSourceId = id;
+                document.getElementById('arrowBtn').textContent = "Pick Target (Alt+m)";
+                render(); 
+            } else {
+                if (id === arrowSourceId) return; 
+                arrows.push({
+                    id: "arrow_" + Date.now(),
+                    from: arrowSourceId,
+                    to: id,
+                    label: "",
+                    style: arrowStyle // Store specific style for this arrow
+                });
+                toggleArrowMode(false); 
+                render();
+            }
+        }
+        
+        function selectArrow(event, id) {
+             if(event) event.stopPropagation();
+             deselectAll(); 
+             selectedArrowId = id;
+             render();
+             document.getElementById('workspace').focus();
+        }
+        
+        function editArrowLabel(event, id) {
+             if(event) event.stopPropagation();
+             const arr = arrows.find(a => a.id === id);
+             if(arr) {
+                 const newLabel = prompt("Arrow Label (e.g. t):", arr.label);
+                 if(newLabel !== null) {
+                     arr.label = newLabel;
+                     render();
+                 }
+             }
+        }
+
+        // --- INTERACTION ---
+
+        function selectNode(event, id) {
+            if (event) event.stopPropagation();
+            
+            if (isDrawingArrow && event) {
+                handleNodeClickForArrow(id);
+                selectedNodeId = id;
+                render();
+                return;
+            }
+
+            deselectAll();
+            selectedNodeId = id;
+            document.getElementById('idEditorPanel').style.visibility = "visible";
+            document.getElementById('nodeIdInput').value = id;
+            render(); 
+            document.getElementById('workspace').focus();
+        }
+
+        function deselectAll() {
+            selectedNodeId = null;
+            selectedNoteNodeId = null;
+            selectedArrowId = null;
+            document.getElementById('idEditorPanel').style.visibility = "hidden";
+            render();
+        }
+
+        function bgClick(event) {
+            if (event.target.id === 'workspace' || event.target.tagName === 'svg') {
+                if(isDrawingArrow) {
+                    toggleArrowMode(false);
+                }
+                if (isEditingNode) {
+                    stopNodeEditing(true);
+                }
+                deselectAll();
+            }
+        }
+        
+        function copyCode() {
+            const copyText = document.getElementById("forestOutput");
+            copyText.select();
+            navigator.clipboard.writeText(copyText.value).then(() => {
+                const btn = document.getElementById('copyBtn');
+                const originalHtml = btn.innerHTML;
+                btn.classList.add('success');
+                btn.innerHTML = `
+                    <svg viewBox="0 0 24 24">
+                        <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
+                    </svg>
+                    COPIED
+                `;
+                setTimeout(() => {
+                    btn.classList.remove('success');
+                    btn.innerHTML = originalHtml;
+                }, 1500);
+            });
+        }
+
+        // --- RENDERING ---
+
+        function assignDepthsAndWidths(node) {
+            if (node.children.length === 0) {
+                node.weight = 1;
+            } else {
+                node.weight = node.children.reduce((acc, c) => acc + assignDepthsAndWidths(c), 0);
+            }
+            return node.weight;
+        }
+
+        function calculateCoords(node, x, y, availableWidth) {
+            globalCoords[node.id] = { x, y };
+            if (!window.treeBounds) window.treeBounds = { maxX: 0, maxY: 0, minX: 99999 };
+            window.treeBounds.maxX = Math.max(window.treeBounds.maxX, x);
+            window.treeBounds.minX = Math.min(window.treeBounds.minX, x);
+            window.treeBounds.maxY = Math.max(window.treeBounds.maxY, y);
+
+            if (node.children.length > 0) {
+                let startX = x - (availableWidth / 2);
+                node.children.forEach(child => {
+                    const childShare = (child.weight / node.weight) * availableWidth;
+                    const childX = startX + (childShare / 2);
+                    calculateCoords(child, childX, y + 80, childShare);
+                    startX += childShare;
+                });
+            }
+        }
+
+        function renderLines(node, svg) {
+             if (node.children.length > 0) {
+                const parentPos = globalCoords[node.id];
+                node.children.forEach(child => {
+                    const childPos = globalCoords[child.id];
+                    const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+                    line.setAttribute("x1", parentPos.x);
+                    line.setAttribute("y1", parentPos.y + 22); // adjusted for node size
+                    line.setAttribute("x2", childPos.x);
+                    line.setAttribute("y2", childPos.y - 22);
+                    line.setAttribute("class", "connection");
+                    svg.appendChild(line);
+                    renderLines(child, svg);
+                });
+            }
+        }
+
+        function renderCircles(node, svg) {
+            const pos = globalCoords[node.id];
+            const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+            g.setAttribute("id", "node-group-" + node.id); 
+            
+            let classes = `node-group`;
+            if (node.id === selectedNodeId) classes += ' selected';
+            if (node.id === arrowSourceId) classes += ' source-node';
+            
+            g.setAttribute("class", classes);
+            g.setAttribute("transform", `translate(${pos.x}, ${pos.y})`);
+            g.setAttribute("onclick", `selectNode(event, '${node.id}')`);
+
+            const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+            circle.setAttribute("r", "20"); 
+            circle.setAttribute("class", "node-circle");
+            
+            const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+            text.setAttribute("class", "node-text");
+            text.textContent = node.label;
+
+            g.appendChild(circle);
+            g.appendChild(text);
+
+            if(node.note) {
+                const noteG = document.createElementNS("http://www.w3.org/2000/svg", "g");
+                noteG.setAttribute("class", `note-group ${node.id === selectedNoteNodeId ? 'selected-note' : ''}`);
+                noteG.setAttribute("onclick", `selectNote(event, '${node.id}')`);
+                const noteText = document.createElementNS("http://www.w3.org/2000/svg", "text");
+                noteText.setAttribute("x", 26); 
+                noteText.setAttribute("y", 0);
+                noteText.setAttribute("class", "note-text");
+                noteText.textContent = node.note.text;
+                noteG.appendChild(noteText);
+                g.appendChild(noteG);
+            }
+            svg.appendChild(g);
+            node.children.forEach(child => renderCircles(child, svg));
+        }
+
+        function renderArrows(svg) {
+            arrows.forEach(arrow => {
+                const p1 = globalCoords[arrow.from];
+                const p2 = globalCoords[arrow.to];
+                if (!p1 || !p2) return; 
+
+                let pathData = "";
+                const currentStyle = arrow.style || 'curved';
+
+                if (currentStyle === 'curved') {
+                    const midX = (p1.x + p2.x) / 2;
+                    const midY = Math.max(p1.y, p2.y) + 60; 
+                    pathData = `M ${p1.x} ${p1.y + 20} Q ${midX} ${midY} ${p2.x} ${p2.y + 20}`;
+                } else {
+                    const dropY = Math.max(p1.y, p2.y) + 60;
+                    pathData = `M ${p1.x} ${p1.y + 20} L ${p1.x} ${dropY} L ${p2.x} ${dropY} L ${p2.x} ${p2.y + 20}`;
+                }
+
+                // Hitbox
+                const hitPath = document.createElementNS("http://www.w3.org/2000/svg", "path");
+                hitPath.setAttribute("d", pathData);
+                hitPath.setAttribute("class", "movement-arrow-hitbox");
+                hitPath.setAttribute("onclick", `selectArrow(event, '${arrow.id}')`);
+                hitPath.setAttribute("ondblclick", `editArrowLabel(event, '${arrow.id}')`);
+                
+                // Visible Arrow
+                const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+                path.setAttribute("d", pathData);
+                path.setAttribute("class", `movement-arrow ${selectedArrowId === arrow.id ? 'selected-arrow' : ''}`);
+                path.setAttribute("fill", "none");
+                path.setAttribute("marker-end", selectedArrowId === arrow.id ? "url(#arrowhead-selected)" : "url(#arrowhead)");
+                
+                svg.appendChild(hitPath);
+                svg.appendChild(path);
+
+                if (arrow.label) {
+                    let lx, ly;
+                    if (currentStyle === 'curved') {
+                        const midX = (p1.x + p2.x) / 2;
+                        const midY = Math.max(p1.y, p2.y) + 60;
+                        lx = 0.25 * p1.x + 0.5 * midX + 0.25 * p2.x;
+                        ly = 0.25 * (p1.y+20) + 0.5 * midY + 0.25 * (p2.y+20);
+                    } else {
+                        const dropY = Math.max(p1.y, p2.y) + 60;
+                        lx = (p1.x + p2.x) / 2;
+                        ly = dropY;
+                    }
+
+                    const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+                    g.setAttribute("onclick", `selectArrow(event, '${arrow.id}')`);
+                    g.setAttribute("ondblclick", `editArrowLabel(event, '${arrow.id}')`);
+                    
+                    const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+                    text.setAttribute("x", lx);
+                    text.setAttribute("y", ly);
+                    text.setAttribute("class", "arrow-label-text");
+                    text.textContent = arrow.label;
+                    
+                    const width = arrow.label.length * 6 + 10;
+                    const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+                    rect.setAttribute("x", lx - width/2);
+                    rect.setAttribute("y", ly - 8);
+                    rect.setAttribute("width", width);
+                    rect.setAttribute("height", 16);
+                    rect.setAttribute("class", "arrow-label-rect");
+                    
+                    g.appendChild(rect);
+                    g.appendChild(text);
+                    svg.appendChild(g);
+                }
+            });
+        }
+
+        function render() {
+            const svg = document.getElementById('treeCanvas');
+            const defs = svg.querySelector('defs');
+            svg.innerHTML = ''; 
+            svg.appendChild(defs);
+            
+            if (!root) {
+                document.getElementById('forestOutput').value = "";
+                svg.setAttribute("width", "100%");
+                svg.setAttribute("height", "100%");
+                return;
+            }
+
+            assignDepthsAndWidths(root);
+            
+            window.treeBounds = { maxX: 0, maxY: 0, minX: 99999 };
+            const nodeSeparation = 100; 
+            const totalWidth = root.weight * nodeSeparation;
+            const viewWidth = document.getElementById('workspace').offsetWidth;
+            const startX = Math.max(viewWidth/2, totalWidth/2 + 50);
+
+            calculateCoords(root, startX, 60, totalWidth);
+            
+            const finalWidth = Math.max(viewWidth, window.treeBounds.maxX + 100);
+            const finalHeight = Math.max(document.getElementById('workspace').offsetHeight, window.treeBounds.maxY + 150); 
+            
+            svg.setAttribute("width", finalWidth);
+            svg.setAttribute("height", finalHeight);
+            
+            renderLines(root, svg);
+            renderArrows(svg);
+            renderCircles(root, svg);
+            generateForestCode();
+        }
+
+        // --- EXPORT ---
+
+        function generateForestCode() {
+            const isNice = document.getElementById("niceTreeToggle").checked;
+            
+            let preamble = "";
+            if (isNice) {
+                preamble = "nice trees";
+            }
+            
+            let treeCode = recurseCode(root);
+            
+            let arrowCode = "";
+            if (arrows.length > 0) {
+                 arrowCode = "\n" + arrows.map(a => {
+                     let lbl = "";
+                     if(a.label) lbl = ` node[midway, fill=white] {${a.label}}`;
+                     
+                     const style = a.style || 'curved';
+                     let drawCmd = "";
+                     
+                     if (style === 'curved') {
+                         drawCmd = `\\draw[->] (${a.from}) to[out=south west, in=south]${lbl} (${a.to});`;
+                     } else {
+                         // Square
+                         drawCmd = `\\draw[->] (${a.from}) -- ++(0,-1.5cm) -|${lbl} (${a.to});`;
+                     }
+                     return drawCmd;
+                 }).join("\n");
+            }
+            
+            const code = `\\begin{forest}\n${preamble ? preamble + ",\n" : ""}${treeCode}${arrowCode}\n\\end{forest}`;
+            document.getElementById('forestOutput').value = code;
+        }
+
+        function recurseCode(node) {
+            if (!node) return "";
+            let nodeStr = node.label + `, name=${node.id}`;
+            if (node.note && node.note.text) {
+                nodeStr += `, label={right:${node.note.text}}`;
+            }
+            let str = `[${nodeStr}`;
+            if (node.children.length > 0) {
+                node.children.forEach(child => {
+                    str += ` ${recurseCode(child)}`;
+                });
+            }
+            str += "]";
+            return str;
+        }
+
+        function copyPreamble(btn) {
+            const code = document.getElementById('preambleCode').textContent;
+            navigator.clipboard.writeText(code).then(() => {
+                const originalText = btn.textContent;
+                btn.textContent = "Copied!";
+                btn.style.background = "#22c55e";
+                btn.style.borderColor = "#22c55e";
+                setTimeout(() => {
+                    btn.textContent = originalText;
+                    btn.style.background = "";
+                    btn.style.borderColor = "";
+                }, 1500);
+            });
+        }
+    </script>
+</body>
+</html>
+</html>
