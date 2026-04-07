@@ -406,6 +406,24 @@
             align-items: center;
         }
 
+        .output-meta {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .perf-badge {
+            font-size: 10px;
+            color: #4b5563;
+            background: #ffffff;
+            border: 1px solid #d1d5db;
+            border-radius: 999px;
+            padding: 3px 8px;
+            text-transform: none;
+            letter-spacing: 0;
+            font-weight: 600;
+        }
+
         /* Copy Button */
         .copy-btn {
             background: var(--text-main); 
@@ -604,6 +622,7 @@
 
         <button class="primary" onclick="addChild(1)" title="Ctrl+Enter">+ Branch</button>
         <button onclick="addChild(2)" title="Ctrl+Shift+Enter">+ 2 Branches</button>
+        <button onclick="addChildToRoot(1)" title="Ctrl+Alt+Enter">+ Root Branch</button>
         
         <div style="width: 1px; height: 20px; background: #e5e5e5; margin: 0 8px;"></div>
         
@@ -614,6 +633,8 @@
         <div style="width: 1px; height: 20px; background: #e5e5e5; margin: 0 8px;"></div>
         
         <button onclick="deleteObject()" title="Backspace">Delete</button>
+        <button onclick="moveSibling(-1)" title="Alt + Left">Move Left</button>
+        <button onclick="moveSibling(1)" title="Alt + Right">Move Right</button>
         <button onclick="resetCanvas()">Clear</button>
         
        <div class="toggle-group">
@@ -644,8 +665,10 @@
                 <div class="shortcut-grid">
                     <div class="shortcut-item"><span>Add 1 Branch</span> <span class="key-combo">Ctrl + Enter</span></div>
                     <div class="shortcut-item"><span>Add 2 Branches</span> <span class="key-combo">Ctrl + Shift + Enter</span></div>
+                    <div class="shortcut-item"><span>Add Root Branch</span> <span class="key-combo">Ctrl + Alt + Enter</span></div>
                     <div class="shortcut-item"><span>Edit Text</span> <span class="key-combo">Enter</span></div>
                     <div class="shortcut-item"><span>Navigate</span> <span class="key-combo">Arrow Keys</span></div>
+                    <div class="shortcut-item"><span>Swap Sister Left/Right</span> <span class="key-combo">Alt + Left/Right</span></div>
                     <div class="shortcut-item"><span>Jump to Arrow</span> <span class="key-combo">Tab</span></div>
                     <div class="shortcut-item"><span>Draw Arrow</span> <span class="key-combo">Alt + m</span></div>
                     <div class="shortcut-item"><span>Add Note</span> <span class="key-combo">Alt + n</span></div>
@@ -703,12 +726,15 @@
     <div class="output-panel">
         <div class="output-header">
             <span>LaTeX Output</span>
-            <button class="copy-btn" id="copyBtn" onclick="copyCode()">
-                <svg viewBox="0 0 24 24">
-                    <path d="M16 1H4C2.9 1 2 1.9 2 3v14h2V3h12V1zm3 4H8C6.9 5 6 5.9 6 7v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>
-                </svg>
-                Copy Code
-            </button>
+            <div class="output-meta">
+                <span id="perfBadge" class="perf-badge">Render -- ms | Drag -- ms</span>
+                <button class="copy-btn" id="copyBtn" onclick="copyCode()">
+                    <svg viewBox="0 0 24 24">
+                        <path d="M16 1H4C2.9 1 2 1.9 2 3v14h2V3h12V1zm3 4H8C6.9 5 6 5.9 6 7v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>
+                    </svg>
+                    Copy Code
+                </button>
+            </div>
         </div>
         <textarea id="forestOutput" readonly></textarea>
     </div>
@@ -747,8 +773,65 @@
         
         // Drag and drop state
         let draggedNodeId = null;
-        let dragOffsetX = 0;
-        let dragOffsetY = 0;
+        let dragTargetId = null;
+        let dragTargetCircle = null;
+        let dragCandidateNodeIds = [];
+        let dragHoverRafPending = false;
+        let dragPointerX = 0;
+        let dragPointerY = 0;
+
+        let treeBounds = { maxX: 0, maxY: 0, minX: 99999 };
+        let cachedLayout = {
+            totalWidth: 0,
+            finalWidth: 0,
+            finalHeight: 0,
+            workspaceWidth: 0,
+            workspaceHeight: 0
+        };
+        let layoutDirty = true;
+        let exportDirty = true;
+        let renderQueued = false;
+
+        const perfStats = {
+            renderMs: [],
+            dragMs: []
+        };
+        const PERF_SAMPLE_SIZE = 25;
+
+        function pushPerfSample(bucket, value) {
+            if (!Number.isFinite(value)) return;
+            perfStats[bucket].push(value);
+            if (perfStats[bucket].length > PERF_SAMPLE_SIZE) {
+                perfStats[bucket].shift();
+            }
+        }
+
+        function avgPerf(bucket) {
+            const arr = perfStats[bucket];
+            if (!arr.length) return null;
+            const sum = arr.reduce((acc, cur) => acc + cur, 0);
+            return sum / arr.length;
+        }
+
+        function updatePerfBadge() {
+            const el = document.getElementById('perfBadge');
+            if (!el) return;
+
+            const renderAvg = avgPerf('renderMs');
+            const dragAvg = avgPerf('dragMs');
+            const renderTxt = renderAvg == null ? '--' : renderAvg.toFixed(2);
+            const dragTxt = dragAvg == null ? '--' : dragAvg.toFixed(2);
+            el.textContent = `Render ${renderTxt} ms | Drag ${dragTxt} ms`;
+        }
+
+        function markLayoutDirty() {
+            layoutDirty = true;
+            exportDirty = true;
+        }
+
+        function markExportDirty() {
+            exportDirty = true;
+        }
 
         // --- HELPER FUNCTIONS ---
         function toggleHelp(scrollToPreamble) {
@@ -783,6 +866,13 @@
 
             // Block shortcuts if we are currently editing the node text
             if (isEditingNode) return; 
+
+            // Root-attach shortcut: add child(ren) directly under root regardless of selection.
+            if (event.key === 'Enter' && (event.ctrlKey || event.metaKey) && event.altKey) {
+                event.preventDefault();
+                addChildToRoot(event.shiftKey ? 2 : 1);
+                return;
+            }
 
             // 1. EDIT MODE / CONFIRM
             if (event.key === 'Enter') {
@@ -824,7 +914,16 @@
                 return;
             }
 
-            // 4. NAVIGATION & SELECTION
+            // 4. SWAP SISTER ORDER ('Alt + Left/Right')
+            if (event.altKey && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) {
+                event.preventDefault();
+                if (selectedNodeId) {
+                    moveSibling(event.key === 'ArrowLeft' ? -1 : 1);
+                }
+                return;
+            }
+
+            // 5. NAVIGATION & SELECTION
             if (selectedArrowId) {
                 const arr = arrows.find(a => a.id === selectedArrowId);
                 if (!arr) return;
@@ -888,7 +987,7 @@
                 }
             }
 
-            // 5. DELETION
+            // 6. DELETION
             if (event.key === 'Backspace' || event.key === 'Delete') {
                 if (selectedArrowId) {
                     event.preventDefault();
@@ -897,11 +996,14 @@
                 }
                 if (selectedNoteNodeId && nodes[selectedNoteNodeId].note) {
                      if(event.key === 'Delete' || nodes[selectedNoteNodeId].note.text === "") {
+                         event.preventDefault();
                          deleteNote();
                          return;
                      }
                      if(event.key === 'Backspace') {
+                         event.preventDefault();
                          nodes[selectedNoteNodeId].note.text = nodes[selectedNoteNodeId].note.text.slice(0, -1);
+                         markExportDirty();
                          render();
                          return;
                      }
@@ -951,7 +1053,10 @@
             const input = document.getElementById('nodeEditor');
             
             if (save && selectedNodeId && nodes[selectedNodeId]) {
-                nodes[selectedNodeId].label = input.value;
+                if (nodes[selectedNodeId].label !== input.value) {
+                    nodes[selectedNodeId].label = input.value;
+                    markExportDirty();
+                }
             }
             
             input.style.display = 'none';
@@ -1001,6 +1106,7 @@
                 if (a.to === oldId) a.to = newId;
             });
             selectedNodeId = newId;
+            markExportDirty();
             render();
             document.getElementById('workspace').focus();
         }
@@ -1025,21 +1131,74 @@
                 labelCounter = 0; idCounter = 1;
                 root = createNode("CP");
                 selectedNodeId = root.id;
+                markLayoutDirty();
                 render();
                 document.getElementById('workspace').focus();
                 return;
             }
-            if (selectedNodeId) {
-                const parent = nodes[selectedNodeId];
-                for(let i=0; i<count; i++) {
-                    const child = createNode(getNextLabel());
-                    linkNodes(parent, child);
-                }
-                render();
-                document.getElementById('workspace').focus();
-            } else {
-                alert("Select a node first.");
+
+            const parent = selectedNodeId ? nodes[selectedNodeId] : root;
+            if (!parent) return;
+
+            for(let i = 0; i < count; i++) {
+                const child = createNode(getNextLabel());
+                linkNodes(parent, child);
             }
+
+            if (!selectedNodeId) {
+                selectedNodeId = root.id;
+                document.getElementById('idEditorPanel').style.visibility = "visible";
+                document.getElementById('nodeIdInput').value = root.id;
+            }
+
+            markLayoutDirty();
+            render();
+            document.getElementById('workspace').focus();
+        }
+
+        function addChildToRoot(count) {
+            if (!root) {
+                labelCounter = 0; idCounter = 1;
+                root = createNode("CP");
+            }
+
+            for (let i = 0; i < count; i++) {
+                const child = createNode(getNextLabel());
+                linkNodes(root, child);
+            }
+
+            selectedNodeId = root.id;
+            selectedNoteNodeId = null;
+            selectedArrowId = null;
+            document.getElementById('idEditorPanel').style.visibility = "visible";
+            document.getElementById('nodeIdInput').value = root.id;
+
+            markLayoutDirty();
+            render();
+            document.getElementById('workspace').focus();
+        }
+
+        function moveSibling(direction) {
+            if (!selectedNodeId) return;
+            const node = nodes[selectedNodeId];
+            if (!node || !node.parentId) return;
+
+            const parent = nodes[node.parentId];
+            if (!parent || !parent.children || parent.children.length < 2) return;
+
+            const index = parent.children.findIndex(child => child.id === node.id);
+            if (index < 0) return;
+
+            const targetIndex = index + direction;
+            if (targetIndex < 0 || targetIndex >= parent.children.length) return;
+
+            const tmp = parent.children[index];
+            parent.children[index] = parent.children[targetIndex];
+            parent.children[targetIndex] = tmp;
+
+            markLayoutDirty();
+            render();
+            document.getElementById('workspace').focus();
         }
 
         function linkNodes(parent, child) {
@@ -1052,6 +1211,7 @@
             const node = nodes[selectedNodeId];
             if(!node.note) {
                 node.note = { text: "Note", position: "right" };
+                markExportDirty();
             }
             selectNote(null, node.id);
         }
@@ -1059,14 +1219,15 @@
         function deleteNote() {
             if(selectedNoteNodeId && nodes[selectedNoteNodeId].note) {
                 nodes[selectedNoteNodeId].note = null;
-                deselectAll();
+                markExportDirty();
+                deselectAll(false);
                 render();
             }
         }
         
         function selectNote(event, nodeId) {
             if(event) event.stopPropagation();
-            deselectAll();
+            deselectAll(false);
             selectedNoteNodeId = nodeId;
             render();
             document.getElementById('workspace').focus();
@@ -1088,7 +1249,8 @@
             }
             deleteNodeRecursive(node);
             arrows = arrows.filter(a => nodes[a.from] && nodes[a.to]);
-            deselectAll();
+            markLayoutDirty();
+            deselectAll(false);
             render();
         }
 
@@ -1101,6 +1263,7 @@
             if(selectedArrowId) {
                 arrows = arrows.filter(a => a.id !== selectedArrowId);
                 selectedArrowId = null;
+                markExportDirty();
                 render();
             }
         }
@@ -1109,8 +1272,9 @@
             root = null;
             nodes = {};
             arrows = [];
-            deselectAll();
+            deselectAll(false);
             labelCounter = 0; idCounter = 1;
+            markLayoutDirty();
             render();
         }
 
@@ -1147,6 +1311,7 @@
                 arrowStyle = 'curved';
                 document.getElementById('styleBtn').textContent = "Style: Curved";
             }
+            markExportDirty();
             render();
         }
 
@@ -1165,13 +1330,14 @@
                     style: arrowStyle // Store specific style for this arrow
                 });
                 toggleArrowMode(false); 
+                markExportDirty();
                 render();
             }
         }
         
         function selectArrow(event, id) {
              if(event) event.stopPropagation();
-             deselectAll(); 
+               deselectAll(false); 
              selectedArrowId = id;
              render();
              document.getElementById('workspace').focus();
@@ -1183,7 +1349,10 @@
              if(arr) {
                  const newLabel = prompt("Arrow Label (e.g. t):", arr.label);
                  if(newLabel !== null) {
-                     arr.label = newLabel;
+                     if (arr.label !== newLabel) {
+                        arr.label = newLabel;
+                        markExportDirty();
+                     }
                      render();
                  }
              }
@@ -1204,7 +1373,7 @@
                 return;
             }
 
-            deselectAll();
+            deselectAll(false);
             selectedNodeId = id;
             document.getElementById('idEditorPanel').style.visibility = "visible";
             document.getElementById('nodeIdInput').value = id;
@@ -1216,26 +1385,26 @@
         let dragStartX = 0;
         let dragStartY = 0;
         let isDragging = false;
-        let dragTargetId = null;
         
         function startDragNode(event, nodeId) {
-            event.preventDefault();
-            event.stopPropagation();
-            
             // Don't drag if editing or drawing arrows
             if (isEditingNode || isDrawingArrow) return;
             
             // Only allow drag if not a root node
             if (nodeId === root.id) {
-                alert("Cannot move the root node");
                 return;
             }
+
+            event.preventDefault();
+            event.stopPropagation();
             
             isDragging = true;
             draggedNodeId = nodeId;
             dragStartX = event.clientX;
             dragStartY = event.clientY;
             dragTargetId = null;
+            dragTargetCircle = null;
+            dragHoverRafPending = false;
             
             // Clear other selections and select this node
             selectedNodeId = nodeId;
@@ -1246,6 +1415,10 @@
             
             // Render to show dragging state
             render();
+
+            // Cache candidate IDs for fast hover hit-testing during drag.
+            // Root is intentionally included so existing nodes can be re-parented under root.
+            dragCandidateNodeIds = Object.keys(globalCoords).filter(id => id !== draggedNodeId);
             
             // Setup temporary mousemove and mouseup handlers
             document.addEventListener('mousemove', onNodeDragMove, {capture: true});
@@ -1254,61 +1427,58 @@
         
         function onNodeDragMove(event) {
             if (!isDragging || !draggedNodeId) return;
-            
-            // Find SVG element and get all node groups
-            const svg = document.getElementById('treeCanvas');
-            if (!svg) return;
-            
-            const nodeGroups = svg.querySelectorAll('.node-group');
-            let hoveredNodeId = null;
-            let closestDistance = 50; // 50px radius
-            
-            // Clear previous target styling
-            nodeGroups.forEach(nodeGroup => {
-                const circle = nodeGroup.querySelector('circle');
-                if (circle) {
-                    circle.classList.remove('drag-target');
-                }
-            });
-            
-            // Check each node's bounding box
-            nodeGroups.forEach(nodeGroup => {
-                const nodeId = nodeGroup.id.replace('node-group-', '');
-                if (nodeId === draggedNodeId || nodeId === root.id) return;
-                
-                try {
-                    const circle = nodeGroup.querySelector('circle');
-                    if (!circle) return;
-                    
-                    const bbox = nodeGroup.getBoundingClientRect();
-                    const centerX = bbox.left + bbox.width / 2;
-                    const centerY = bbox.top + bbox.height / 2;
-                    
-                    const distX = event.clientX - centerX;
-                    const distY = event.clientY - centerY;
-                    const distance = Math.sqrt(distX * distX + distY * distY);
-                    
-                    // Find closest node within radius
-                    if (distance < closestDistance) {
-                        closestDistance = distance;
-                        hoveredNodeId = nodeId;
+            dragPointerX = event.clientX;
+            dragPointerY = event.clientY;
+            if (dragHoverRafPending) return;
+
+            dragHoverRafPending = true;
+            requestAnimationFrame(() => {
+                dragHoverRafPending = false;
+                if (!isDragging || !draggedNodeId) return;
+
+                const t0 = performance.now();
+                const workspace = document.getElementById('workspace');
+                if (!workspace) return;
+
+                const rect = workspace.getBoundingClientRect();
+                const pointerX = dragPointerX - rect.left + workspace.scrollLeft;
+                const pointerY = dragPointerY - rect.top + workspace.scrollTop;
+
+                let hoveredNodeId = null;
+                let closestDistanceSq = 50 * 50;
+
+                for (let i = 0; i < dragCandidateNodeIds.length; i++) {
+                    const candidateId = dragCandidateNodeIds[i];
+                    const pos = globalCoords[candidateId];
+                    if (!pos) continue;
+
+                    const dx = pointerX - pos.x;
+                    const dy = pointerY - pos.y;
+                    const distanceSq = dx * dx + dy * dy;
+                    if (distanceSq < closestDistanceSq) {
+                        closestDistanceSq = distanceSq;
+                        hoveredNodeId = candidateId;
                     }
-                } catch (e) {
-                    // Continue on error
                 }
-            });
-            
-            // Apply target styling
-            dragTargetId = hoveredNodeId;
-            if (hoveredNodeId) {
-                const targetGroup = document.getElementById('node-group-' + hoveredNodeId);
-                if (targetGroup) {
-                    const circle = targetGroup.querySelector('circle');
+
+                if (dragTargetCircle) {
+                    dragTargetCircle.classList.remove('drag-target');
+                    dragTargetCircle = null;
+                }
+
+                dragTargetId = hoveredNodeId;
+                if (hoveredNodeId) {
+                    const targetGroup = document.getElementById('node-group-' + hoveredNodeId);
+                    const circle = targetGroup ? targetGroup.querySelector('circle') : null;
                     if (circle) {
                         circle.classList.add('drag-target');
+                        dragTargetCircle = circle;
                     }
                 }
-            }
+
+                pushPerfSample('dragMs', performance.now() - t0);
+                updatePerfBadge();
+            });
         }
         
         function onNodeDragEnd(event) {
@@ -1322,10 +1492,16 @@
             if (dragTargetId && dragTargetId !== draggedNodeId) {
                 moveNode(draggedNodeId, dragTargetId);
             }
+
+            if (dragTargetCircle) {
+                dragTargetCircle.classList.remove('drag-target');
+                dragTargetCircle = null;
+            }
             
             isDragging = false;
             draggedNodeId = null;
             dragTargetId = null;
+            dragCandidateNodeIds = [];
             
             render();
         }
@@ -1356,6 +1532,8 @@
             arrows = arrows.filter(a => {
                 return (nodes[a.from] && nodes[a.to]);
             });
+
+            markLayoutDirty();
         }
         
         function isNodeAncestorOf(potentialAncestor, potentialDescendant) {
@@ -1367,12 +1545,12 @@
             return false;
         }
 
-        function deselectAll() {
+        function deselectAll(shouldRender = true) {
             selectedNodeId = null;
             selectedNoteNodeId = null;
             selectedArrowId = null;
             document.getElementById('idEditorPanel').style.visibility = "hidden";
-            render();
+            if (shouldRender) render();
         }
 
         function bgClick(event) {
@@ -1420,17 +1598,16 @@
 
         function calculateCoords(node, x, y, availableWidth) {
             globalCoords[node.id] = { x, y };
-            if (!window.treeBounds) window.treeBounds = { maxX: 0, maxY: 0, minX: 99999 };
-            window.treeBounds.maxX = Math.max(window.treeBounds.maxX, x);
-            window.treeBounds.minX = Math.min(window.treeBounds.minX, x);
-            window.treeBounds.maxY = Math.max(window.treeBounds.maxY, y);
+            treeBounds.maxX = Math.max(treeBounds.maxX, x);
+            treeBounds.minX = Math.min(treeBounds.minX, x);
+            treeBounds.maxY = Math.max(treeBounds.maxY, y);
 
             if (node.children.length > 0) {
                 let startX = x - (availableWidth / 2);
                 node.children.forEach(child => {
                     const childShare = (child.weight / node.weight) * availableWidth;
                     const childX = startX + (childShare / 2);
-                    calculateCoords(child, childX, y + 80, childShare);
+                    calculateCoords(child, childX, y + CONFIG.TREE_SPACING, childShare);
                     startX += childShare;
                 });
             }
@@ -1443,9 +1620,9 @@
                     const childPos = globalCoords[child.id];
                     const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
                     line.setAttribute("x1", parentPos.x);
-                    line.setAttribute("y1", parentPos.y + 22); // adjusted for node size
+                    line.setAttribute("y1", parentPos.y + CONFIG.NODE_OFFSET);
                     line.setAttribute("x2", childPos.x);
-                    line.setAttribute("y2", childPos.y - 22);
+                    line.setAttribute("y2", childPos.y - CONFIG.NODE_OFFSET);
                     line.setAttribute("class", "connection");
                     svg.appendChild(line);
                     renderLines(child, svg);
@@ -1470,7 +1647,7 @@
             g.setAttribute("style", "cursor: grab;");
 
             const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-            circle.setAttribute("r", "20"); 
+            circle.setAttribute("r", String(CONFIG.NODE_RADIUS)); 
             circle.setAttribute("class", "node-circle");
             
             const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
@@ -1485,7 +1662,7 @@
                 noteG.setAttribute("class", `note-group ${node.id === selectedNoteNodeId ? 'selected-note' : ''}`);
                 noteG.setAttribute("onclick", `selectNote(event, '${node.id}')`);
                 const noteText = document.createElementNS("http://www.w3.org/2000/svg", "text");
-                noteText.setAttribute("x", 26); 
+                noteText.setAttribute("x", String(CONFIG.NODE_RADIUS + 6)); 
                 noteText.setAttribute("y", 0);
                 noteText.setAttribute("class", "note-text");
                 noteText.textContent = node.note.text;
@@ -1507,11 +1684,11 @@
 
                 if (currentStyle === 'curved') {
                     const midX = (p1.x + p2.x) / 2;
-                    const midY = Math.max(p1.y, p2.y) + 60; 
-                    pathData = `M ${p1.x} ${p1.y + 20} Q ${midX} ${midY} ${p2.x} ${p2.y + 20}`;
+                    const midY = Math.max(p1.y, p2.y) + CONFIG.ARROW_DROP_HEIGHT; 
+                    pathData = `M ${p1.x} ${p1.y + CONFIG.NODE_RADIUS} Q ${midX} ${midY} ${p2.x} ${p2.y + CONFIG.NODE_RADIUS}`;
                 } else {
-                    const dropY = Math.max(p1.y, p2.y) + 60;
-                    pathData = `M ${p1.x} ${p1.y + 20} L ${p1.x} ${dropY} L ${p2.x} ${dropY} L ${p2.x} ${p2.y + 20}`;
+                    const dropY = Math.max(p1.y, p2.y) + CONFIG.ARROW_DROP_HEIGHT;
+                    pathData = `M ${p1.x} ${p1.y + CONFIG.NODE_RADIUS} L ${p1.x} ${dropY} L ${p2.x} ${dropY} L ${p2.x} ${p2.y + CONFIG.NODE_RADIUS}`;
                 }
 
                 // Hitbox
@@ -1535,11 +1712,11 @@
                     let lx, ly;
                     if (currentStyle === 'curved') {
                         const midX = (p1.x + p2.x) / 2;
-                        const midY = Math.max(p1.y, p2.y) + 60;
+                        const midY = Math.max(p1.y, p2.y) + CONFIG.ARROW_DROP_HEIGHT;
                         lx = 0.25 * p1.x + 0.5 * midX + 0.25 * p2.x;
-                        ly = 0.25 * (p1.y+20) + 0.5 * midY + 0.25 * (p2.y+20);
+                        ly = 0.25 * (p1.y + CONFIG.NODE_RADIUS) + 0.5 * midY + 0.25 * (p2.y + CONFIG.NODE_RADIUS);
                     } else {
-                        const dropY = Math.max(p1.y, p2.y) + 60;
+                        const dropY = Math.max(p1.y, p2.y) + CONFIG.ARROW_DROP_HEIGHT;
                         lx = (p1.x + p2.x) / 2;
                         ly = dropY;
                     }
@@ -1554,7 +1731,7 @@
                     text.setAttribute("class", "arrow-label-text");
                     text.textContent = arrow.label;
                     
-                    const width = arrow.label.length * 6 + 10;
+                    const width = arrow.label.length * CONFIG.LABEL_WIDTH_MULTIPLIER + CONFIG.LABEL_PADDING;
                     const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
                     rect.setAttribute("x", lx - width/2);
                     rect.setAttribute("y", ly - 8);
@@ -1570,6 +1747,16 @@
         }
 
         function render() {
+            if (renderQueued) return;
+            renderQueued = true;
+            requestAnimationFrame(() => {
+                renderQueued = false;
+                renderNow();
+            });
+        }
+
+        function renderNow() {
+            const t0 = performance.now();
             const svg = document.getElementById('treeCanvas');
             const defs = svg.querySelector('defs');
             svg.innerHTML = ''; 
@@ -1579,21 +1766,35 @@
                 document.getElementById('forestOutput').value = "";
                 svg.setAttribute("width", "100%");
                 svg.setAttribute("height", "100%");
+                updatePerfBadge();
                 return;
             }
 
-            assignDepthsAndWidths(root);
-            
-            window.treeBounds = { maxX: 0, maxY: 0, minX: 99999 };
-            const nodeSeparation = 100; 
-            const totalWidth = root.weight * nodeSeparation;
-            const viewWidth = document.getElementById('workspace').offsetWidth;
-            const startX = Math.max(viewWidth/2, totalWidth/2 + 50);
+            const workspace = document.getElementById('workspace');
+            const viewWidth = workspace.offsetWidth;
+            const viewHeight = workspace.offsetHeight;
+            const sizeChanged = cachedLayout.workspaceWidth !== viewWidth || cachedLayout.workspaceHeight !== viewHeight;
 
-            calculateCoords(root, startX, 60, totalWidth);
-            
-            const finalWidth = Math.max(viewWidth, window.treeBounds.maxX + 100);
-            const finalHeight = Math.max(document.getElementById('workspace').offsetHeight, window.treeBounds.maxY + 150); 
+            if (layoutDirty || sizeChanged) {
+                assignDepthsAndWidths(root);
+
+                treeBounds = { maxX: 0, maxY: 0, minX: 99999 };
+                const nodeSeparation = 100;
+                const totalWidth = root.weight * nodeSeparation;
+                const startX = Math.max(viewWidth / 2, totalWidth / 2 + 50);
+
+                calculateCoords(root, startX, 60, totalWidth);
+
+                cachedLayout.totalWidth = totalWidth;
+                cachedLayout.finalWidth = Math.max(viewWidth, treeBounds.maxX + CONFIG.SVG_PADDING);
+                cachedLayout.finalHeight = Math.max(viewHeight, treeBounds.maxY + 150);
+                cachedLayout.workspaceWidth = viewWidth;
+                cachedLayout.workspaceHeight = viewHeight;
+                layoutDirty = false;
+            }
+
+            const finalWidth = cachedLayout.finalWidth;
+            const finalHeight = cachedLayout.finalHeight;
             
             svg.setAttribute("width", finalWidth);
             svg.setAttribute("height", finalHeight);
@@ -1601,68 +1802,161 @@
             renderLines(root, svg);
             renderArrows(svg);
             renderCircles(root, svg);
-            generateForestCode();
+
+            if (exportDirty) {
+                generateForestCode();
+                exportDirty = false;
+            }
+
+            pushPerfSample('renderMs', performance.now() - t0);
+            updatePerfBadge();
         }
 
         // --- EXPORT ---
 
+        const LATEX_ESCAPE_MAP = {
+            "\\": "\\textbackslash{}",
+            "{": "\\{",
+            "}": "\\}",
+            "#": "\\#",
+            "$": "\\$",
+            "%": "\\%",
+            "&": "\\&",
+            "_": "\\_",
+            "^": "\\textasciicircum{}",
+            "~": "\\textasciitilde{}"
+        };
+
+        function escapeLatexText(value) {
+            const text = String(value ?? "");
+            return text.replace(/[\\{}#$%&_^~]/g, ch => LATEX_ESCAPE_MAP[ch] || ch);
+        }
+
+        function normalizeNodeContent(label) {
+            const trimmed = String(label ?? "").trim();
+            if (!trimmed) return "{}";
+            return escapeLatexText(trimmed);
+        }
+
+        function sanitizeNameToken(raw) {
+            const fallback = String(raw ?? "").trim();
+            const cleaned = fallback.replace(/[^A-Za-z0-9_-]/g, "_");
+            return cleaned || "node";
+        }
+
+        function buildExportNameMap(rootNode) {
+            const exportNameById = {};
+            if (!rootNode) return exportNameById;
+
+            const used = new Set();
+            const queue = [rootNode];
+            let index = 1;
+
+            while (queue.length > 0) {
+                const node = queue.shift();
+                if (!node || exportNameById[node.id]) continue;
+
+                const base = sanitizeNameToken(node.id);
+                let name = `${base}_${index++}`;
+                while (used.has(name)) {
+                    name = `${base}_${index++}`;
+                }
+                used.add(name);
+                exportNameById[node.id] = name;
+
+                node.children.forEach(child => queue.push(child));
+            }
+
+            return exportNameById;
+        }
+
+        function buildExportNodeCode(node, exportNameById) {
+            const options = [`name=${exportNameById[node.id]}`];
+
+            if (node.note && typeof node.note.text === 'string' && node.note.text.trim()) {
+                const notePosition = node.note.position || 'right';
+                const safeNote = escapeLatexText(node.note.text.trim());
+                options.push(`label={${notePosition}:${safeNote}}`);
+            }
+
+            return `${normalizeNodeContent(node.label)}, ${options.join(', ')}`;
+        }
+
+        function buildForestTreeCode(rootNode, exportNameById) {
+            if (!rootNode) return "";
+
+            const lines = [];
+            const stack = [{ node: rootNode, depth: 0, closing: false }];
+
+            while (stack.length > 0) {
+                const frame = stack.pop();
+                const indent = "  ".repeat(frame.depth);
+
+                if (frame.closing) {
+                    lines.push(`${indent}]`);
+                    continue;
+                }
+
+                const node = frame.node;
+                const nodeCode = buildExportNodeCode(node, exportNameById);
+
+                if (!node.children.length) {
+                    lines.push(`${indent}[${nodeCode}]`);
+                    continue;
+                }
+
+                lines.push(`${indent}[${nodeCode}`);
+                stack.push({ node, depth: frame.depth, closing: true });
+                for (let i = node.children.length - 1; i >= 0; i--) {
+                    stack.push({ node: node.children[i], depth: frame.depth + 1, closing: false });
+                }
+            }
+
+            return lines.join("\n");
+        }
+
         function generateForestCode() {
+            if (!root) {
+                document.getElementById('forestOutput').value = "";
+                return;
+            }
+
             const isNice = document.getElementById("niceTreeToggle").checked;
+            const exportNameById = buildExportNameMap(root);
             
             let preamble = "";
             if (isNice) {
                 preamble = "nice trees";
             }
             
-            let treeCode = recurseCode(root, 1);
+            const treeCode = buildForestTreeCode(root, exportNameById);
             
             let arrowCode = "";
             if (arrows.length > 0) {
                  arrowCode = "\n\n% Movement arrows\n" + arrows.map(a => {
+                     const fromName = exportNameById[a.from];
+                     const toName = exportNameById[a.to];
+                     if (!fromName || !toName) return "";
+
                      let lbl = "";
-                     if(a.label) lbl = ` node[midway, fill=white] {${a.label}}`;
+                     const safeLabel = String(a.label || "").trim();
+                     if (safeLabel) lbl = ` node[midway, fill=white] {${escapeLatexText(safeLabel)}}`;
                      
                      const style = a.style || 'curved';
                      let drawCmd = "";
                      
                      if (style === 'curved') {
-                         drawCmd = `\\draw[->] (${a.from}) to[out=south west, in=south]${lbl} (${a.to});`;
+                         drawCmd = `\\draw[->] (${fromName}) to[out=south west, in=south]${lbl} (${toName});`;
                      } else {
                          // Square
-                         drawCmd = `\\draw[->] (${a.from}) -- ++(0,-1.5cm) -|${lbl} (${a.to});`;
+                         drawCmd = `\\draw[->] (${fromName}) -- ++(0,-1.5cm) -|${lbl} (${toName});`;
                      }
                      return drawCmd;
-                 }).join("\n");
+                 }).filter(Boolean).join("\n");
             }
             
             const code = `\\begin{forest}\n  ${preamble ? preamble + ",\n  " : ""}${treeCode}\n\\end{forest}${arrowCode}`;
             document.getElementById('forestOutput').value = code;
-        }
-
-        function recurseCode(node, depth) {
-            if (!node) return "";
-            
-            const indent = "  ".repeat(depth);
-            const nextIndent = "  ".repeat(depth + 1);
-            
-            let nodeStr = node.label + `, name=${node.id}`;
-            if (node.note && node.note.text) {
-                nodeStr += `, label={right:${node.note.text}}`;
-            }
-            
-            if (node.children.length === 0) {
-                return `[${nodeStr}]`;
-            }
-            
-            let str = `[${nodeStr}\n`;
-            node.children.forEach((child, index) => {
-                str += nextIndent + recurseCode(child, depth + 1);
-                if (index < node.children.length - 1) {
-                    str += "\n";
-                }
-            });
-            str += `\n${indent}]`;
-            return str;
         }
 
         function initOutputPanelResize() {
@@ -1755,7 +2049,8 @@
         }
 
         initOutputPanelResize();
+        updatePerfBadge();
+        render();
     </script>
 </body>
-</html>
 </html>
