@@ -14,7 +14,7 @@
             /* Minimalist Palette */
             --bg-color: #ffffff;
             --text-main: #111111;
-            --text-muted: #888888; /* Slightly lighter for the 'home' link */
+            --text-muted: #888888;
             --border-light: #e5e5e5;
             --border-dark: #111111;
             
@@ -25,7 +25,24 @@
             --node-stroke: #111111;
             --line-color: #111111;
             
-            --danger: #ef4444; 
+            --danger: #ef4444;
+            
+            /* Spacing & Sizing Constants */
+            --node-radius: 20px;
+            --node-stroke-width: 1.5px;
+            --border-radius: 4px;
+            --spacing-sm: 4px;
+            --spacing-md: 8px;
+            --spacing-lg: 12px;
+            --spacing-xl: 16px;
+            --spacing-2xl: 24px;
+            --spacing-3xl: 32px;
+            --font-size-sm: 11px;
+            --font-size-md: 13px;
+            --font-size-base: 14px;
+            --font-size-lg: 18px;
+            --tree-vertical-spacing: 80px;
+            --tree-node-offset: 22px;
         }
 
         body {
@@ -204,7 +221,7 @@
         .node-circle {
             fill: var(--node-fill);
             stroke: var(--node-stroke);
-            stroke-width: 1.5px;
+            stroke-width: var(--node-stroke-width);
             transition: all 0.15s ease;
         }
 
@@ -244,9 +261,24 @@
         }
 
         .node-group.selected .node-circle {
-            stroke-width: 2px;
-            stroke: var(--text-main); 
-            fill: #f4f4f5; 
+            stroke-width: 3px;
+            stroke: #2563eb;
+            fill: #dbeafe;
+            filter: drop-shadow(0 0 6px rgba(37, 99, 235, 0.5));
+        }
+        
+        .node-group.dragging .node-circle {
+            stroke-width: 3px;
+            stroke: #7c3aed;
+            fill: #ede9fe;
+            opacity: 0.8;
+            filter: drop-shadow(0 0 8px rgba(124, 58, 237, 0.6));
+        }
+        
+        .node-circle.drag-target {
+            stroke-width: 2.5px !important;
+            stroke: #059669 !important;
+            fill: #d1fae5 !important;
         }
         
         .node-group.source-node .node-circle {
@@ -318,9 +350,46 @@
         .output-panel {
             background: #fafafa;
             border-top: 1px solid var(--border-light);
-            height: 140px;
+            height: 300px;
             display: flex;
             flex-direction: column;
+            overflow: hidden;
+        }
+
+        .panel-divider {
+            height: 16px;
+            border-top: 1px solid var(--border-light);
+            border-bottom: 1px solid var(--border-light);
+            background: #f8f8f8;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: row-resize;
+            user-select: none;
+        }
+
+        .panel-divider-handle {
+            width: 42px;
+            height: 10px;
+            border: 1px solid #d4d4d4;
+            border-radius: 999px;
+            background: #ffffff;
+            color: #777777;
+            font-size: 11px;
+            line-height: 8px;
+            text-align: center;
+            font-weight: 700;
+            letter-spacing: 1px;
+            pointer-events: none;
+        }
+
+        .panel-divider:hover {
+            background: #f1f1f1;
+        }
+
+        body.resizing-output {
+            cursor: row-resize;
+            user-select: none;
         }
 
         .output-header {
@@ -375,6 +444,10 @@
             font-family: 'Menlo', 'Monaco', 'Courier New', monospace;
             font-size: 12px;
             padding: 16px;
+            flex: 1;
+            resize: none;
+            width: 100%;
+            box-sizing: border-box;
         }
 
         /* --- HELP MODAL --- */
@@ -389,14 +462,7 @@
             justify-content: center;
         }
 
-        .modal-content {
-            background: white;
-            border: 1px solid var(--border-dark);
-            padding: 32px;
-            width: 100%;
-            max-width: 500px;
-            box-shadow: 0 10px 40px -10px rgba(0,0,0,0.1);
-        }
+
 
         .modal-header {
             font-size: 18px;
@@ -630,6 +696,10 @@
         </svg>
     </div>
 
+    <div class="panel-divider" id="outputDivider" title="Drag to resize output height">
+        <div class="panel-divider-handle">=</div>
+    </div>
+
     <div class="output-panel">
         <div class="output-header">
             <span>LaTeX Output</span>
@@ -644,6 +714,20 @@
     </div>
 
     <script>
+        // ============ CONFIGURATION & CONSTANTS ============
+        const CONFIG = {
+            NODE_RADIUS: 20,
+            NODE_OFFSET: 22,
+            TREE_SPACING: 80,
+            GRID_SIZE: 20,
+            SVG_PADDING: 100,
+            ARROW_DROP_HEIGHT: 60,
+            LABEL_WIDTH_MULTIPLIER: 6,
+            LABEL_PADDING: 10
+        };
+        
+        const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+        
         // --- DATA STRUCTURE ---
         let root = null;
         let selectedNodeId = null;
@@ -656,31 +740,31 @@
 
         const globalCoords = {}; 
         let idCounter = 1; 
-        let labelCounter = 0; 
-        const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+        let labelCounter = 0;
 
         let isDrawingArrow = false;
         let arrowSourceId = null;
+        
+        // Drag and drop state
+        let draggedNodeId = null;
+        let dragOffsetX = 0;
+        let dragOffsetY = 0;
 
         // --- HELPER FUNCTIONS ---
         function toggleHelp(scrollToPreamble) {
-    const modal = document.getElementById('helpModal');
-    
-    // If modal is open and we clicked the main help button again, close it.
-    // BUT if we clicked the (i) icon, force it open even if it was closed.
-    if (modal.style.display === 'flex' && !scrollToPreamble) {
-        modal.style.display = 'none';
-    } else {
-        modal.style.display = 'flex';
-        if (scrollToPreamble) {
-            // Wait 100ms for the modal to render, then scroll
-            setTimeout(() => {
-                const section = document.getElementById('preambleSection');
-                if(section) section.scrollIntoView({ behavior: 'smooth' });
-            }, 100);
+            const modal = document.getElementById('helpModal');
+            if (modal.style.display === 'flex' && !scrollToPreamble) {
+                modal.style.display = 'none';
+            } else {
+                modal.style.display = 'flex';
+                if (scrollToPreamble) {
+                    setTimeout(() => {
+                        const section = document.getElementById('preambleSection');
+                        if(section) section.scrollIntoView({ behavior: 'smooth' });
+                    }, 100);
+                }
+            }
         }
-    }
-}
 
         // --- KEYBOARD LISTENER ---
         document.addEventListener('keydown', function(event) {
@@ -924,7 +1008,7 @@
         function getNextLabel() {
             const charIndex = labelCounter % 26;
             const cycle = Math.floor(labelCounter / 26);
-            const name = alphabet[charIndex] + (cycle > 0 ? cycle : "");
+            const name = ALPHABET[charIndex] + (cycle > 0 ? cycle : "");
             labelCounter++;
             return name;
         }
@@ -1110,6 +1194,9 @@
         function selectNode(event, id) {
             if (event) event.stopPropagation();
             
+            // Don't select if we're starting a drag
+            if (isDragging) return;
+            
             if (isDrawingArrow && event) {
                 handleNodeClickForArrow(id);
                 selectedNodeId = id;
@@ -1123,6 +1210,161 @@
             document.getElementById('nodeIdInput').value = id;
             render(); 
             document.getElementById('workspace').focus();
+        }
+        
+        // --- DRAG AND DROP ---
+        let dragStartX = 0;
+        let dragStartY = 0;
+        let isDragging = false;
+        let dragTargetId = null;
+        
+        function startDragNode(event, nodeId) {
+            event.preventDefault();
+            event.stopPropagation();
+            
+            // Don't drag if editing or drawing arrows
+            if (isEditingNode || isDrawingArrow) return;
+            
+            // Only allow drag if not a root node
+            if (nodeId === root.id) {
+                alert("Cannot move the root node");
+                return;
+            }
+            
+            isDragging = true;
+            draggedNodeId = nodeId;
+            dragStartX = event.clientX;
+            dragStartY = event.clientY;
+            dragTargetId = null;
+            
+            // Clear other selections and select this node
+            selectedNodeId = nodeId;
+            selectedNoteNodeId = null;
+            selectedArrowId = null;
+            document.getElementById('idEditorPanel').style.visibility = "visible";
+            document.getElementById('nodeIdInput').value = nodeId;
+            
+            // Render to show dragging state
+            render();
+            
+            // Setup temporary mousemove and mouseup handlers
+            document.addEventListener('mousemove', onNodeDragMove, {capture: true});
+            document.addEventListener('mouseup', onNodeDragEnd, {capture: true});
+        }
+        
+        function onNodeDragMove(event) {
+            if (!isDragging || !draggedNodeId) return;
+            
+            // Find SVG element and get all node groups
+            const svg = document.getElementById('treeCanvas');
+            if (!svg) return;
+            
+            const nodeGroups = svg.querySelectorAll('.node-group');
+            let hoveredNodeId = null;
+            let closestDistance = 50; // 50px radius
+            
+            // Clear previous target styling
+            nodeGroups.forEach(nodeGroup => {
+                const circle = nodeGroup.querySelector('circle');
+                if (circle) {
+                    circle.classList.remove('drag-target');
+                }
+            });
+            
+            // Check each node's bounding box
+            nodeGroups.forEach(nodeGroup => {
+                const nodeId = nodeGroup.id.replace('node-group-', '');
+                if (nodeId === draggedNodeId || nodeId === root.id) return;
+                
+                try {
+                    const circle = nodeGroup.querySelector('circle');
+                    if (!circle) return;
+                    
+                    const bbox = nodeGroup.getBoundingClientRect();
+                    const centerX = bbox.left + bbox.width / 2;
+                    const centerY = bbox.top + bbox.height / 2;
+                    
+                    const distX = event.clientX - centerX;
+                    const distY = event.clientY - centerY;
+                    const distance = Math.sqrt(distX * distX + distY * distY);
+                    
+                    // Find closest node within radius
+                    if (distance < closestDistance) {
+                        closestDistance = distance;
+                        hoveredNodeId = nodeId;
+                    }
+                } catch (e) {
+                    // Continue on error
+                }
+            });
+            
+            // Apply target styling
+            dragTargetId = hoveredNodeId;
+            if (hoveredNodeId) {
+                const targetGroup = document.getElementById('node-group-' + hoveredNodeId);
+                if (targetGroup) {
+                    const circle = targetGroup.querySelector('circle');
+                    if (circle) {
+                        circle.classList.add('drag-target');
+                    }
+                }
+            }
+        }
+        
+        function onNodeDragEnd(event) {
+            if (!isDragging) return;
+            
+            // Remove temporary handlers
+            document.removeEventListener('mousemove', onNodeDragMove, {capture: true});
+            document.removeEventListener('mouseup', onNodeDragEnd, {capture: true});
+            
+            // Move node if valid target
+            if (dragTargetId && dragTargetId !== draggedNodeId) {
+                moveNode(draggedNodeId, dragTargetId);
+            }
+            
+            isDragging = false;
+            draggedNodeId = null;
+            dragTargetId = null;
+            
+            render();
+        }
+        
+        function moveNode(sourceNodeId, targetNodeId) {
+            const sourceNode = nodes[sourceNodeId];
+            const targetNode = nodes[targetNodeId];
+            
+            if (!sourceNode || !targetNode) return;
+            
+            // Prevent moving to itself or its own children
+            if (sourceNode.id === targetNode.id || isNodeAncestorOf(sourceNode, targetNode)) {
+                alert("Cannot move node to its own subtree");
+                return;
+            }
+            
+            // Remove from old parent
+            if (sourceNode.parentId) {
+                const oldParent = nodes[sourceNode.parentId];
+                oldParent.children = oldParent.children.filter(c => c.id !== sourceNode.id);
+            }
+            
+            // Add to new parent
+            sourceNode.parentId = targetNode.id;
+            targetNode.children.push(sourceNode);
+            
+            // Clean up orphaned arrows
+            arrows = arrows.filter(a => {
+                return (nodes[a.from] && nodes[a.to]);
+            });
+        }
+        
+        function isNodeAncestorOf(potentialAncestor, potentialDescendant) {
+            let current = potentialDescendant;
+            while (current) {
+                if (current.id === potentialAncestor.id) return true;
+                current = current.parentId ? nodes[current.parentId] : null;
+            }
+            return false;
         }
 
         function deselectAll() {
@@ -1219,10 +1461,13 @@
             let classes = `node-group`;
             if (node.id === selectedNodeId) classes += ' selected';
             if (node.id === arrowSourceId) classes += ' source-node';
+            if (node.id === draggedNodeId) classes += ' dragging';
             
             g.setAttribute("class", classes);
             g.setAttribute("transform", `translate(${pos.x}, ${pos.y})`);
             g.setAttribute("onclick", `selectNode(event, '${node.id}')`);
+            g.setAttribute("onmousedown", `startDragNode(event, '${node.id}')`);
+            g.setAttribute("style", "cursor: grab;");
 
             const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
             circle.setAttribute("r", "20"); 
@@ -1369,11 +1614,11 @@
                 preamble = "nice trees";
             }
             
-            let treeCode = recurseCode(root);
+            let treeCode = recurseCode(root, 1);
             
             let arrowCode = "";
             if (arrows.length > 0) {
-                 arrowCode = "\n" + arrows.map(a => {
+                 arrowCode = "\n\n% Movement arrows\n" + arrows.map(a => {
                      let lbl = "";
                      if(a.label) lbl = ` node[midway, fill=white] {${a.label}}`;
                      
@@ -1390,24 +1635,108 @@
                  }).join("\n");
             }
             
-            const code = `\\begin{forest}\n${preamble ? preamble + ",\n" : ""}${treeCode}${arrowCode}\n\\end{forest}`;
+            const code = `\\begin{forest}\n  ${preamble ? preamble + ",\n  " : ""}${treeCode}\n\\end{forest}${arrowCode}`;
             document.getElementById('forestOutput').value = code;
         }
 
-        function recurseCode(node) {
+        function recurseCode(node, depth) {
             if (!node) return "";
+            
+            const indent = "  ".repeat(depth);
+            const nextIndent = "  ".repeat(depth + 1);
+            
             let nodeStr = node.label + `, name=${node.id}`;
             if (node.note && node.note.text) {
                 nodeStr += `, label={right:${node.note.text}}`;
             }
-            let str = `[${nodeStr}`;
-            if (node.children.length > 0) {
-                node.children.forEach(child => {
-                    str += ` ${recurseCode(child)}`;
-                });
+            
+            if (node.children.length === 0) {
+                return `[${nodeStr}]`;
             }
-            str += "]";
+            
+            let str = `[${nodeStr}\n`;
+            node.children.forEach((child, index) => {
+                str += nextIndent + recurseCode(child, depth + 1);
+                if (index < node.children.length - 1) {
+                    str += "\n";
+                }
+            });
+            str += `\n${indent}]`;
             return str;
+        }
+
+        function initOutputPanelResize() {
+            const divider = document.getElementById('outputDivider');
+            const panel = document.querySelector('.output-panel');
+            if (!divider || !panel) return;
+
+            const state = {
+                isResizing: false,
+                startY: 0,
+                startHeight: 0,
+                minHeight: 140,
+                defaultHeight: 300,
+                storageKey: 'forestOutputPanelHeight'
+            };
+
+            function getMaxHeight() {
+                return Math.floor(window.innerHeight * 0.75);
+            }
+
+            function clampHeight(height) {
+                return Math.max(state.minHeight, Math.min(getMaxHeight(), height));
+            }
+
+            function applyPanelHeight(height) {
+                const nextHeight = clampHeight(height);
+                panel.style.height = `${nextHeight}px`;
+                localStorage.setItem(state.storageKey, String(nextHeight));
+                render();
+            }
+
+            const savedHeight = Number(localStorage.getItem(state.storageKey));
+            if (Number.isFinite(savedHeight) && savedHeight > 0) {
+                applyPanelHeight(savedHeight);
+            } else {
+                applyPanelHeight(state.defaultHeight);
+            }
+
+            function onResizeStart(event) {
+                state.isResizing = true;
+                state.startY = event.clientY;
+                state.startHeight = panel.offsetHeight;
+                document.body.classList.add('resizing-output');
+                event.preventDefault();
+            }
+
+            function onResizeMove(event) {
+                if (!state.isResizing) return;
+
+                const deltaY = event.clientY - state.startY;
+                applyPanelHeight(state.startHeight - deltaY);
+            }
+
+            function onResizeEnd() {
+                if (!state.isResizing) return;
+                state.isResizing = false;
+                document.body.classList.remove('resizing-output');
+            }
+
+            function onResizeReset() {
+                applyPanelHeight(state.defaultHeight);
+            }
+
+            divider.addEventListener('mousedown', onResizeStart);
+            divider.addEventListener('dblclick', onResizeReset);
+            document.addEventListener('mousemove', onResizeMove);
+            document.addEventListener('mouseup', onResizeEnd);
+            window.addEventListener('resize', () => {
+                const currentHeight = panel.offsetHeight;
+                const clamped = clampHeight(currentHeight);
+                if (clamped !== currentHeight) {
+                    applyPanelHeight(clamped);
+                }
+            });
         }
 
         function copyPreamble(btn) {
@@ -1424,6 +1753,8 @@
                 }, 1500);
             });
         }
+
+        initOutputPanelResize();
     </script>
 </body>
 </html>
